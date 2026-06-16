@@ -4,12 +4,28 @@ use crate::base::cmd::*;
 
 
 pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static{
-    generate_handler![greet, log_example]
+    generate_handler![
+        greet,
+        log_example,
+        detect_frameworks,
+        register_hook,
+        unregister_hook,
+        hub_start,
+        hub_stop,
+        hub_status,
+        hub_ws_url,
+        hub_events,
+        hub_clients,
+        window_minimize,
+        window_toggle_maximize,
+        window_close,
+    ]
 }
 
 
 pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
     let builder = builder.plugin(tauri_plugin_opener::init());
+    let builder = builder.plugin(tauri_plugin_shell::init());
 
     let builder = builder.plugin(
         tauri_plugin_log::Builder::new()

@@ -1,11 +1,37 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/addons",
+    "crates/agent-hook",
+    "crates/agent-hook-hub",
     "src-tauri"
 ]
 
 [workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# Logging
+tracing = "0.1"
+
+# Error handling
+thiserror = "1"
+
+# WebSocket
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+
+# Internal crates
+agent-hook = { path = "crates/agent-hook", default-features = false }
 
 [profile.release]
 opt-level = 3

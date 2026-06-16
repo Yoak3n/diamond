@@ -18,6 +18,7 @@ pub struct LightWeightState {
     pub close_listeners: Vec<u32>,
     pub focus_listeners: Vec<u32>,
     pub listened_windows: HashSet<String>,
+    pub timer_active: bool,
 }
 
 impl LightWeightState {
@@ -26,6 +27,7 @@ impl LightWeightState {
             close_listeners: Vec::new(),
             focus_listeners: Vec::new(),
             listened_windows: HashSet::new(),
+            timer_active: false,
         }
     }
 }
@@ -115,12 +117,20 @@ fn setup_light_weight_timer() -> Result<()> {
         .context("failed to create timer task")?;
 
     // 添加任务到定时器
-    // 由于会定时刷新，所以这里需要添加一个不被刷新的容器
     {
         let delay_timer = Timer::global().delay_timer.write();
         delay_timer
             .add_task(task)
             .context("failed to add timer task")?;
+    }
+
+    // 标记定时器已激活
+    if let Some(app_handle) = handle::Handle::global().app_handle() {
+        app_handle
+            .state::<AppState>()
+            .lightweight
+            .lock()
+            .timer_active = true;
     }
 
     Ok(())
@@ -142,13 +152,24 @@ pub fn entry_lightweight_mode() {
 }
 
 fn cancel_light_weight_timer() -> Result<()> {
-    // let mut timer_map = Timer::global().timer_map.write();
-    let delay_timer = Timer::global().delay_timer.write();
+    // 只在定时器实际激活时才尝试移除
+    let should_cancel = if let Some(app_handle) = handle::Handle::global().app_handle() {
+        let app_state = app_handle.state::<AppState>();
+        let mut state = app_state.lightweight.lock();
+        if state.timer_active {
+            state.timer_active = false;
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
-    // if let Some(task) = timer_map.remove(&LIGHT_WEIGHT_TASK_ID) {
-    delay_timer
-        .remove_task(LIGHT_WEIGHT_TASK_ID)
-        .context("failed to remove timer task")?;
-    // }
+    if should_cancel {
+        let delay_timer = Timer::global().delay_timer.write();
+        let _ = delay_timer.remove_task(LIGHT_WEIGHT_TASK_ID);
+    }
+
     Ok(())
 }

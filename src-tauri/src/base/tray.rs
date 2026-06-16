@@ -1,11 +1,9 @@
 use anyhow::Result;
 use tauri::{
-    AppHandle, Runtime, Wry,
+    AppHandle, Manager, Runtime, Wry,
     menu::{CheckMenuItem, Menu, MenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
 };
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-use tauri_plugin_autostart::ManagerExt;
 
 use crate::base::window::schema::WindowType;
 
@@ -20,7 +18,8 @@ pub fn create_tray_icon<R: Runtime>(app: &tauri::App<R>, visible: bool) -> Resul
         true,
         None::<&str>,
     )?;
-    let menu = Menu::with_items(app, &[ &show_i,&quit_i])?;
+    let hub_i = CheckMenuItem::with_id(app, "hub", "Hub Server", true, false, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&hub_i, &show_i, &quit_i])?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let auto_i = CheckMenuItem::with_id(
@@ -28,7 +27,10 @@ pub fn create_tray_icon<R: Runtime>(app: &tauri::App<R>, visible: bool) -> Resul
             "autostart",
             "AutoStart",
             true,
-            app.autolaunch().is_enabled().unwrap_or(false),
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                app.autolaunch().is_enabled().unwrap_or(false)
+            },
             None::<&str>,
         )?;
         menu.insert_items(&[&auto_i], 0)?;
@@ -45,9 +47,17 @@ pub fn create_tray_icon<R: Runtime>(app: &tauri::App<R>, visible: bool) -> Resul
             "show" => {
                 WM::global().toggle_window(WindowType::Main);
             }
+            "hub" => {
+                tauri::async_runtime::spawn(async {
+                    super::tray::toggle_hub().await;
+                });
+            }
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             "autostart" => {
-                let autostart_manager = app.autolaunch();
+                let autostart_manager = {
+                    use tauri_plugin_autostart::ManagerExt;
+                    app.autolaunch()
+                };
                 let currently_enabled = autostart_manager.is_enabled().unwrap_or(false);
                 let new_state = if currently_enabled {
                     autostart_manager.disable().is_ok() && false
@@ -73,6 +83,12 @@ pub fn create_tray_icon<R: Runtime>(app: &tauri::App<R>, visible: bool) -> Resul
             }
         })
         .build(app)?;
+
+    // Sync hub check state after tray icon is created
+    tauri::async_runtime::spawn(async {
+        sync_hub_check().await;
+    });
+
     Ok(())
 }
 
@@ -82,6 +98,10 @@ pub fn update_menu_visible(visible: bool) {
     let tray = app_handle.tray_by_id("main").unwrap();
     tray.set_menu(Some(create_tray_menu(&app_handle, visible).unwrap()))
         .unwrap();
+    // Sync hub check state after menu rebuild
+    tauri::async_runtime::spawn(async {
+        sync_hub_check().await;
+    });
 }
 
 fn create_tray_menu(app_handle: &AppHandle, visiable: bool) -> Result<Menu<Wry>> {
@@ -93,7 +113,13 @@ fn create_tray_menu(app_handle: &AppHandle, visiable: bool) -> Result<Menu<Wry>>
         true,
         None::<&str>,
     )?;
-    let menu = Menu::with_items(app_handle, &[&show_i, &quit_i])?;
+    // Get hub state synchronously from atomic flag
+    let hub_running = app_handle
+        .try_state::<super::state::AppState>()
+        .map(|state| state.hub_running.load(std::sync::atomic::Ordering::Relaxed))
+        .unwrap_or(false);
+    let hub_i = CheckMenuItem::with_id(app_handle, "hub", "Hub Server", true, hub_running, None::<&str>)?;
+    let menu = Menu::with_items(app_handle, &[&hub_i, &show_i, &quit_i])?;
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
@@ -102,11 +128,56 @@ fn create_tray_menu(app_handle: &AppHandle, visiable: bool) -> Result<Menu<Wry>>
             "autostart",
             "AutoStart",
             true,
-            app_handle.autolaunch().is_enabled().unwrap_or(false),
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                app_handle.autolaunch().is_enabled().unwrap_or(false)
+            },
             None::<&str>,
         )?;
         menu.insert_items(&[&auto_i], 0)?;
     }
 
     Ok(menu)
+}
+
+/// Toggle hub server and update tray check state.
+pub async fn toggle_hub() {
+    let app_handle = Handle::global().app_handle().unwrap();
+    let state = app_handle.state::<super::state::AppState>();
+    let manager = state.hub_manager.lock().await;
+    let running = manager.is_running();
+    let result = if running {
+        manager.stop(&app_handle).await
+    } else {
+        manager.start(&app_handle).await
+    };
+    match result {
+        Ok(()) => {
+            let new_state = !running;
+            state.hub_running.store(new_state, std::sync::atomic::Ordering::Relaxed);
+            log::info!("Hub {}", if new_state { "started" } else { "stopped" });
+            set_tray_check(&app_handle, "hub", new_state);
+        }
+        Err(e) => {
+            log::warn!("Hub toggle failed: {}", e);
+        }
+    }
+}
+
+/// Sync hub check state with actual hub state.
+pub async fn sync_hub_check() {
+    let app_handle = Handle::global().app_handle().unwrap();
+    let state = app_handle.state::<super::state::AppState>();
+    let manager = state.hub_manager.lock().await;
+    let running = manager.is_running();
+    state.hub_running.store(running, std::sync::atomic::Ordering::Relaxed);
+    set_tray_check(&app_handle, "hub", running);
+}
+
+fn set_tray_check(app: &AppHandle, id: &str, checked: bool) {
+    if let Some(item) = app.menu().and_then(|m| m.get(id)) {
+        if let Some(check_item) = item.as_check_menuitem() {
+            let _ = check_item.set_checked(checked);
+        }
+    }
 }

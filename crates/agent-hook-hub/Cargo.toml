@@ -1,0 +1,45 @@
+[package]
+name = "agent-hook-hub"
+version = "0.1.0"
+edition = "2021"
+description = "WS Hub server for agent-hook — receives and broadcasts agent events"
+
+[[bin]]
+name = "hook-hub"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["ws", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Async runtime
+tokio.workspace = true
+
+# WebSocket
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Shared protocol
+agent-hook.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror.workspace = true
+
+# Time
+chrono.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Clap for CLI
+clap = { version = "4", features = ["derive"] }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-vue-template",
+  "productName": "diamond",
   "version": "0.1.0",
-  "identifier": "com.yoa.tauri-vue-template",
+  "identifier": "com.yoa.diamond",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -24,6 +24,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": ["binaries/hook-hub"]
   }
 }

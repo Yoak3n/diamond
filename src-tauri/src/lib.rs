@@ -1,4 +1,5 @@
 pub mod base;
+pub mod hook;
 
 use base::init;
 pub use base::window::manager::Manager as WM;

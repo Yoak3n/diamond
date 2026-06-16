@@ -25,10 +25,10 @@ impl WindowConfig {
                 window_type,
                 inner_size: (800.0, 600.0),
                 min_inner_size: (400.0, 80.0),
-                decorations: true,
+                decorations: false, // 无边框窗口，使用自定义 header
                 transparent: false,
                 skip_taskbar: false,
-                shadow: false,
+                shadow: true,
                 always_on_top: false,
                 maximizable: true,
                 focused: true,

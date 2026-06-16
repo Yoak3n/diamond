@@ -1,0 +1,52 @@
+[package]
+name = "agent-hook"
+version = "0.1.0"
+edition = "2021"
+description = "Universal agent framework hooking — unified event protocol, WS hub client, and runtime patching"
+
+[dependencies]
+# Async runtime
+tokio.workspace = true
+
+# WebSocket client
+tokio-tungstenite = { workspace = true, features = ["native-tls"] }
+futures-util.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Time
+chrono.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Regex for stdout parsing
+regex = "1"
+
+# Windows-specific dependencies
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+dirs-next = "2"
+
+# Non-Windows
+[target.'cfg(not(windows))'.dependencies]
+dirs-next = "2"
+
+# Python interop (optional)
+pyo3 = { version = "0.23", optional = true, features = ["auto-initialize"] }
+
+[features]
+default = ["python"]
+python = ["pyo3"]
+
+[lib]
+name = "agent_hook"
+path = "src/lib.rs"
