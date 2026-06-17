@@ -70,12 +70,44 @@ impl HermesAdapter {
     }
 
     /// Handle a `tool_start_callback` invocation.
-    pub fn on_tool_start(&self, name: &str) {
+    pub fn on_tool_start(&self, name: &str, input: Option<&str>) {
+        let mut data = serde_json::Map::new();
+        data.insert("tool_name".into(), serde_json::Value::String(name.into()));
+        if let Some(args) = input {
+            data.insert("tool_input".into(), serde_json::Value::String(args.into()));
+        }
         self.emit(AgentEvent::new(
             EventType::ToolStart,
             "hermes",
             &self.session_id,
-            EventData::from([("name", serde_json::Value::String(name.into()))]),
+            EventData::Map(data),
+        ));
+    }
+
+    /// Handle a `tool_end_callback` invocation.
+    pub fn on_tool_end(&self, name: &str, output: &str, success: bool) {
+        let mut data = serde_json::Map::new();
+        data.insert("tool_name".into(), serde_json::Value::String(name.into()));
+        data.insert("tool_response".into(), serde_json::Value::String(output.into()));
+        data.insert("success".into(), serde_json::Value::Bool(success));
+        self.emit(AgentEvent::new(
+            EventType::ToolComplete,
+            "hermes",
+            &self.session_id,
+            EventData::Map(data),
+        ));
+    }
+
+    /// Handle a `tool_error_callback` invocation.
+    pub fn on_tool_error(&self, name: &str, error: &str) {
+        let mut data = serde_json::Map::new();
+        data.insert("tool_name".into(), serde_json::Value::String(name.into()));
+        data.insert("error".into(), serde_json::Value::String(error.into()));
+        self.emit(AgentEvent::new(
+            EventType::ToolError,
+            "hermes",
+            &self.session_id,
+            EventData::Map(data),
         ));
     }
 

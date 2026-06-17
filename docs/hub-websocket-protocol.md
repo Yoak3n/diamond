@@ -115,6 +115,8 @@ Agent 执行步骤（每次迭代）。
 |------|------|------|
 | `iteration` | number | 当前迭代次数 |
 | `prev_tools` | array | 之前使用的工具列表 |
+| `model` | string | LLM 模型名称（LangChain） |
+| `tool_call_id` | string | 调用 ID（可选） |
 
 ```json
 {

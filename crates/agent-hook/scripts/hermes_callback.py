@@ -10,6 +10,7 @@ Usage (from Rust):
 
 import json
 import sys
+from datetime import datetime, timezone
 
 
 def make_callback_wrapper(event_type: str, callback_name: str, session_id: str, framework: str):
@@ -20,19 +21,55 @@ def make_callback_wrapper(event_type: str, callback_name: str, session_id: str, 
             "event": event_type,
             "framework": framework,
             "session_id": session_id,
-            "callback": callback_name,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Extract first argument if present
-        if args:
+        # 根据事件类型提取特定字段
+        if event_type == "message:delta" and args:
+            # 消息增量 - 提取文本
             try:
-                data["arg"] = repr(args[0])[:500]
+                data["text"] = str(args[0])[:500]
             except Exception:
-                data["arg"] = "<unrepresentable>"
-
-        # Extract kwargs if present
-        if kwargs:
-            data["kwargs"] = {k: repr(v)[:200] for k, v in list(kwargs.items())[:10]}
+                pass
+        elif event_type == "tool:start" and args:
+            # 工具开始 - 提取工具名和输入
+            try:
+                data["tool_name"] = str(args[0])
+                if len(args) > 1:
+                    data["tool_input"] = args[1] if isinstance(args[1], dict) else str(args[1])[:500]
+            except Exception:
+                pass
+        elif event_type == "agent:step":
+            # Agent 步骤
+            if args:
+                try:
+                    data["iteration"] = int(args[0]) if args[0] is not None else 0
+                except (ValueError, TypeError):
+                    pass
+        elif event_type == "message:interim" and args:
+            # 临时消息 - 提取文本
+            try:
+                data["text"] = str(args[0])[:500]
+            except Exception:
+                pass
+        elif event_type == "thinking:delta" and args:
+            # 思考增量
+            try:
+                data["text"] = str(args[0])[:500]
+            except Exception:
+                pass
+        elif event_type == "system:status":
+            # 系统状态
+            if args:
+                try:
+                    data["kind"] = str(args[0])
+                except Exception:
+                    pass
+            if len(args) > 1:
+                try:
+                    data["message"] = str(args[1])[:500]
+                except Exception:
+                    pass
 
         print(json.dumps(data, ensure_ascii=False))
         sys.stdout.flush()

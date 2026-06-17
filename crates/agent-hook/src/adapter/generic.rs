@@ -141,10 +141,23 @@ impl GenericAdapter {
             "method".into(),
             serde_json::Value::String(method_name.into()),
         );
-        data.insert(
-            "result".into(),
-            serde_json::Value::String(result.into()),
-        );
+
+        // 根据事件类型使用统一字段名
+        if lower.contains("tool") {
+            data.insert(
+                "tool_name".into(),
+                serde_json::Value::String(method_name.into()),
+            );
+            data.insert(
+                "tool_response".into(),
+                serde_json::Value::String(result.into()),
+            );
+        } else {
+            data.insert(
+                "result".into(),
+                serde_json::Value::String(result.into()),
+            );
+        }
 
         self.emit(AgentEvent::new(
             event_type,

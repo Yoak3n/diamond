@@ -252,17 +252,26 @@ function scheduleReconnect() {{
 }}
 
 function emit(eventType, data) {{
-    const msg = JSON.stringify({{
+    // 构建符合统一协议的消息格式
+    const msg = {{
         event: eventType,
         framework: FRAMEWORK,
+        session_id: data?.session_id || "default",
         timestamp: new Date().toISOString(),
-        data: data || {{}},
-    }});
+    }};
+
+    // 合并数据字段到顶层（排除 session_id，已提取到顶层）
+    if (data) {{
+        const {{ session_id, ...rest }} = data;
+        Object.assign(msg, rest);
+    }}
+
+    const jsonStr = JSON.stringify(msg);
 
     if (connected && ws && ws.readyState === WebSocket.OPEN) {{
-        ws.send(msg);
+        ws.send(jsonStr);
     }} else {{
-        buffer.push(msg);
+        buffer.push(jsonStr);
         if (buffer.length > MAX_BUFFER) buffer.shift();
         connectHub();
     }}
@@ -272,19 +281,32 @@ function emit(eventType, data) {{
 
 function serializeEvent(event) {{
     if (!event) return {{}};
-    // OpenClaw events vary by hook type; extract common fields
     const result = {{}};
-    if (event.runId) result.run_id = event.runId;
+
+    // 会话 ID
     if (event.sessionKey) result.session_id = event.sessionKey;
+
+    // 工具相关字段（统一命名）
     if (event.toolName) result.tool_name = event.toolName;
-    if (event.params) result.params = JSON.stringify(event.params).slice(0, 500);
-    if (event.error) result.error = String(event.error).slice(0, 500);
+    if (event.params) result.tool_input = typeof event.params === 'object' ? event.params : JSON.stringify(event.params).slice(0, 500);
+    if (event.toolResult) result.tool_response = typeof event.toolResult === 'object' ? event.toolResult : String(event.toolResult).slice(0, 500);
+    if (event.durationMs) result.duration_ms = event.durationMs;
+
+    // 消息内容
     if (event.text) result.text = String(event.text).slice(0, 500);
     if (event.content) result.content = String(event.content).slice(0, 500);
+
+    // 错误信息
+    if (event.error) result.error = String(event.error).slice(0, 500);
+
+    // 模型信息
     if (event.provider) result.provider = event.provider;
     if (event.model) result.model = event.model;
-    if (event.durationMs) result.duration_ms = event.durationMs;
+
+    // 其他
     if (event.outcome) result.outcome = event.outcome;
+    if (event.runId) result.run_id = event.runId;
+
     return result;
 }}
 

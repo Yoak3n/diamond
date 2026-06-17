@@ -227,9 +227,10 @@ pub fn normalize_event_name(event: &str, framework: &str) -> String {
 // ─── Event Data Normalization ────────────────────────────────────────────────
 
 /// Unified field names for tool events.
-const TOOL_INPUT_FIELDS: &[&str] = &["tool_input", "args", "input", "parameters"];
+const TOOL_NAME_FIELDS: &[&str] = &["tool_name", "name"];
+const TOOL_INPUT_FIELDS: &[&str] = &["tool_input", "args", "input", "parameters", "arguments"];
 const TOOL_RESULT_FIELDS: &[&str] = &["tool_response", "tool_result", "result", "output"];
-const TOOL_ID_FIELDS: &[&str] = &["tool_use_id", "tool_call_id", "call_id", "id"];
+const TOOL_ID_FIELDS: &[&str] = &["tool_use_id", "tool_call_id", "call_id", "id", "run_id"];
 
 /// Normalize event data fields to a unified schema.
 ///
@@ -255,6 +256,9 @@ pub fn normalize_event_data(
         _ => return data,
     };
 
+    // Normalize tool_name: find first existing field and rename to tool_name
+    normalize_field_group(&mut obj, TOOL_NAME_FIELDS, "tool_name");
+
     // Normalize tool_input: find first existing field and rename to tool_input
     normalize_field_group(&mut obj, TOOL_INPUT_FIELDS, "tool_input");
 
@@ -267,7 +271,7 @@ pub fn normalize_event_data(
     // Remove framework-specific fields that are not part of the unified schema
     let framework_specific = [
         "hook_event_name", "cwd", "effort", "permission_mode",
-        "transcript_path",
+        "transcript_path", "callback",
     ];
     for key in framework_specific {
         obj.remove(key);

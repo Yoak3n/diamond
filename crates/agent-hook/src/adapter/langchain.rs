@@ -40,7 +40,7 @@ impl LangChainAdapter {
             &self.session_id,
             EventData::from([
                 ("model", serde_json::Value::String(model_name.into())),
-                ("run_id", serde_json::Value::String(run_id.into())),
+                ("tool_call_id", serde_json::Value::String(run_id.into())),
             ]),
         ));
     }
@@ -61,7 +61,7 @@ impl LangChainAdapter {
             EventType::MessageStreamEnd,
             "langchain",
             &self.session_id,
-            EventData::from([("run_id", serde_json::Value::String(run_id.into()))]),
+            EventData::from([("tool_call_id", serde_json::Value::String(run_id.into()))]),
         ));
     }
 
@@ -72,9 +72,9 @@ impl LangChainAdapter {
             "langchain",
             &self.session_id,
             EventData::from([
-                ("name", serde_json::Value::String(name.into())),
-                ("arguments", serde_json::Value::String(input.into())),
-                ("run_id", serde_json::Value::String(run_id.into())),
+                ("tool_name", serde_json::Value::String(name.into())),
+                ("tool_input", serde_json::Value::String(input.into())),
+                ("tool_call_id", serde_json::Value::String(run_id.into())),
             ]),
         ));
     }
@@ -86,9 +86,9 @@ impl LangChainAdapter {
             "langchain",
             &self.session_id,
             EventData::from([
-                ("name", serde_json::Value::String(name.into())),
-                ("result", serde_json::Value::String(output.into())),
-                ("run_id", serde_json::Value::String(run_id.into())),
+                ("tool_name", serde_json::Value::String(name.into())),
+                ("tool_response", serde_json::Value::String(output.into())),
+                ("tool_call_id", serde_json::Value::String(run_id.into())),
             ]),
         ));
     }
@@ -100,9 +100,9 @@ impl LangChainAdapter {
             "langchain",
             &self.session_id,
             EventData::from([
-                ("name", serde_json::Value::String(name.into())),
+                ("tool_name", serde_json::Value::String(name.into())),
                 ("error", serde_json::Value::String(error.into())),
-                ("run_id", serde_json::Value::String(run_id.into())),
+                ("tool_call_id", serde_json::Value::String(run_id.into())),
             ]),
         ));
     }
@@ -115,7 +115,7 @@ impl LangChainAdapter {
             &self.session_id,
             EventData::from([
                 ("name", serde_json::Value::String(name.into())),
-                ("run_id", serde_json::Value::String(run_id.into())),
+                ("tool_call_id", serde_json::Value::String(run_id.into())),
             ]),
         ));
     }
@@ -128,7 +128,7 @@ impl LangChainAdapter {
             &self.session_id,
             EventData::from([
                 ("name", serde_json::Value::String(name.into())),
-                ("run_id", serde_json::Value::String(run_id.into())),
+                ("tool_call_id", serde_json::Value::String(run_id.into())),
             ]),
         ));
     }

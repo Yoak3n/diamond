@@ -100,7 +100,7 @@ impl ClaudeCodeAdapter {
             &self.session_id,
             EventData::from([
                 ("tool_name", serde_json::Value::String(tool_name.into())),
-                ("args", tool_input),
+                ("tool_input", tool_input),
             ]),
         ));
     }
@@ -131,7 +131,7 @@ impl ClaudeCodeAdapter {
             &self.session_id,
             EventData::from([
                 ("tool_name", serde_json::Value::String(tool_name.into())),
-                ("result", tool_result),
+                ("tool_response", tool_result),
             ]),
         ));
     }
