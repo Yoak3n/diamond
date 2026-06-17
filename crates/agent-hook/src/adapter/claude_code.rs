@@ -161,6 +161,88 @@ impl ClaudeCodeAdapter {
         ));
     }
 
+    /// Handle a `SessionEnd` hook event.
+    pub fn on_session_end(&self, data: &serde_json::Value) {
+        let session_id = data.get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&self.session_id);
+
+        self.emit(AgentEvent::new(
+            EventType::SessionEnd,
+            "claude-code",
+            session_id,
+            EventData::empty(),
+        ));
+    }
+
+    /// Handle a `SubagentStop` hook event.
+    pub fn on_subagent_stop(&self, data: &serde_json::Value) {
+        let mut event_data = EventData::empty();
+
+        if let Some(reason) = data.get("stop_reason").and_then(|v| v.as_str()) {
+            event_data.insert("reason", serde_json::Value::String(reason.into()));
+        }
+
+        self.emit(AgentEvent::new(
+            EventType::SubagentComplete,
+            "claude-code",
+            &self.session_id,
+            event_data,
+        ));
+    }
+
+    /// Handle a `UserPromptSubmit` hook event.
+    pub fn on_user_prompt_submit(&self, data: &serde_json::Value) {
+        let mut event_data = EventData::empty();
+
+        if let Some(prompt) = data.get("prompt").and_then(|v| v.as_str()) {
+            event_data.insert("text", serde_json::Value::String(prompt.into()));
+        }
+
+        self.emit(AgentEvent::new(
+            EventType::MessageUser,
+            "claude-code",
+            &self.session_id,
+            event_data,
+        ));
+    }
+
+    /// Handle a `PermissionRequest` hook event.
+    pub fn on_permission_request(&self, data: &serde_json::Value) {
+        let tool_name = data.get("tool_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+
+        let tool_input = data.get("tool_input")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+
+        let message = data.get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        self.emit(AgentEvent::new(
+            EventType::ApprovalRequest,
+            "claude-code",
+            &self.session_id,
+            EventData::from([
+                ("tool_name", serde_json::Value::String(tool_name.into())),
+                ("tool_input", tool_input),
+                ("message", serde_json::Value::String(message.into())),
+            ]),
+        ));
+    }
+
+    /// Handle a `PreCompact` hook event.
+    pub fn on_pre_compact(&self, _data: &serde_json::Value) {
+        self.emit(AgentEvent::new(
+            EventType::SystemCompression,
+            "claude-code",
+            &self.session_id,
+            EventData::empty(),
+        ));
+    }
+
     /// Handle any Claude Code hook event by dispatching on `hook_event_name`.
     pub fn on_hook_event(&self, data: &serde_json::Value) {
         let event_name = data.get("hook_event_name")
@@ -169,9 +251,14 @@ impl ClaudeCodeAdapter {
 
         match event_name {
             "SessionStart" => self.on_session_start(data),
+            "SessionEnd" => self.on_session_end(data),
             "PreToolUse" => self.on_pre_tool_use(data),
             "PostToolUse" => self.on_post_tool_use(data),
             "Stop" | "StopFailure" => self.on_stop(data),
+            "SubagentStop" => self.on_subagent_stop(data),
+            "UserPromptSubmit" => self.on_user_prompt_submit(data),
+            "PermissionRequest" => self.on_permission_request(data),
+            "PreCompact" => self.on_pre_compact(data),
             _ => {
                 // Pass through as custom event
                 self.emit(AgentEvent::new(

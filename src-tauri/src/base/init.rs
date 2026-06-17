@@ -36,7 +36,7 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 Target::new(TargetKind::Webview),
                 // 输出到日志文件
                 Target::new(TargetKind::Folder {
-                    path: dirs::data_dir().unwrap_or_default().join("tauri-vue-template").join("logs"),
+                    path: dirs::data_dir().unwrap_or_default().join("diamond").join("logs"),
                     file_name: Some("app".into()),
                 }),
             ])
@@ -59,6 +59,12 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
         let _ = crate::base::tray::create_tray_icon(app, false);
         crate::base::lightweight::add_window_listeners(crate::base::window::schema::WindowType::Main);
 
+        // Kill sidecar on Ctrl+C / SIGTERM
+        let _ = ctrlc::set_handler(|| {
+            crate::hook::hub::kill_by_port(19210);
+            std::process::exit(0);
+        });
+
         Ok(())
     })
 }
@@ -69,6 +75,10 @@ pub fn app_event_handle(app_handle: &AppHandle, event: RunEvent) {
         tauri::RunEvent::ExitRequested { api, code, .. } => {
             if code.is_none() {
                 api.prevent_exit();
+            } else {
+                // App is actually exiting — synchronously kill the hub sidecar
+                crate::hook::hub::kill_by_port(19210);
+                log::info!("App exiting, Hub sidecar cleanup triggered");
             }
         }
         tauri::RunEvent::WindowEvent { label, event, .. } => {

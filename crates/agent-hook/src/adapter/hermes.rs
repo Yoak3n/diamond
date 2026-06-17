@@ -90,8 +90,13 @@ impl HermesAdapter {
         data.insert("tool_name".into(), serde_json::Value::String(name.into()));
         data.insert("tool_response".into(), serde_json::Value::String(output.into()));
         data.insert("success".into(), serde_json::Value::Bool(success));
+        let event_type = if success {
+            EventType::ToolComplete
+        } else {
+            EventType::ToolError
+        };
         self.emit(AgentEvent::new(
-            EventType::ToolComplete,
+            event_type,
             "hermes",
             &self.session_id,
             EventData::Map(data),
@@ -153,6 +158,39 @@ impl HermesAdapter {
     pub fn on_interim(&self, text: &str) {
         self.emit(AgentEvent::new(
             EventType::MessageInterim,
+            "hermes",
+            &self.session_id,
+            EventData::from([("text", serde_json::Value::String(text.into()))]),
+        ));
+    }
+
+    /// Handle an `approval_callback` invocation.
+    pub fn on_approval(&self, tool_name: &str, message: &str) {
+        self.emit(AgentEvent::new(
+            EventType::ApprovalRequest,
+            "hermes",
+            &self.session_id,
+            EventData::from([
+                ("tool_name", serde_json::Value::String(tool_name.into())),
+                ("message", serde_json::Value::String(message.into())),
+            ]),
+        ));
+    }
+
+    /// Handle a `thinking_callback` invocation.
+    pub fn on_thinking(&self, text: &str) {
+        self.emit(AgentEvent::new(
+            EventType::ThinkingDelta,
+            "hermes",
+            &self.session_id,
+            EventData::from([("text", serde_json::Value::String(text.into()))]),
+        ));
+    }
+
+    /// Handle a `reasoning_callback` invocation.
+    pub fn on_reasoning(&self, text: &str) {
+        self.emit(AgentEvent::new(
+            EventType::ReasoningAvailable,
             "hermes",
             &self.session_id,
             EventData::from([("text", serde_json::Value::String(text.into()))]),

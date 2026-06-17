@@ -12,7 +12,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::server::AppState;
+use crate::server::{AppState, normalize_event_fields};
 use crate::store::StoredEvent;
 
 // ─── Response Types ─────────────────────────────────────────────────────────
@@ -46,16 +46,6 @@ pub struct EventsQuery {
 #[derive(Deserialize)]
 pub struct LatestQuery {
     pub n: Option<usize>,
-}
-
-// ─── Emit Request ───────────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct EmitRequest {
-    pub event: String,
-    pub framework: Option<String>,
-    pub timestamp: Option<String>,
-    pub data: Option<serde_json::Value>,
 }
 
 // ─── Handlers ───────────────────────────────────────────────────────────────
@@ -111,27 +101,78 @@ pub async fn events_latest(
 ///
 /// This is the fallback endpoint for frameworks that can't maintain
 /// a persistent WebSocket connection (e.g., Python hooks).
+///
+/// Accepts either:
+/// - Flat format: `{ "event": "...", "framework": "...", "session_id": "...", ... }`
+/// - Nested format: `{ "event": "...", "framework": "...", "data": { ... } }`
 pub async fn emit(
     State(state): State<AppState>,
-    Json(payload): Json<EmitRequest>,
+    Json(payload): Json<serde_json::Value>,
 ) -> StatusCode {
-    let framework = payload.framework.unwrap_or_else(|| "unknown".into());
-    let normalized = normalize_event_name(&payload.event, &framework);
-    let data = normalize_event_data(payload.data.unwrap_or_default(), &framework, &normalized);
+    let mut obj = match payload {
+        serde_json::Value::Object(map) => map,
+        _ => return StatusCode::BAD_REQUEST,
+    };
 
-    let event_json = serde_json::json!({
-        "event": normalized,
-        "framework": framework,
-        "timestamp": payload.timestamp.unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
-        "data": data,
-    });
+    let framework = obj.get("framework")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
 
-    let json_str = event_json.to_string();
+    // Normalize event name
+    if let Some(event) = obj.get("event").and_then(|v| v.as_str()) {
+        let normalized = normalize_event_name(event, &framework);
+        obj.insert("event".into(), serde_json::Value::String(normalized));
+    }
+
+    // Flatten data to top level if present
+    if let Some(data) = obj.remove("data") {
+        if let Some(data_obj) = data.as_object() {
+            for (key, value) in data_obj {
+                if !obj.contains_key(key) {
+                    obj.insert(key.clone(), value.clone());
+                }
+            }
+        }
+    }
+
+    // Ensure framework
+    if !obj.contains_key("framework") {
+        obj.insert("framework".into(), serde_json::Value::String(framework.clone()));
+    }
+
+    // Normalize timestamp
+    if let Some(ts) = obj.get("timestamp").and_then(|v| v.as_str()) {
+        let s = ts.trim();
+        let normalized = if s.ends_with("+00:00") {
+            format!("{}Z", &s[..s.len() - 6])
+        } else {
+            s.to_string()
+        };
+        obj.insert("timestamp".into(), serde_json::Value::String(normalized));
+    } else {
+        obj.insert("timestamp".into(), serde_json::Value::String(
+            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        ));
+    }
+
+    // Normalize tool field names if applicable
+    if let Some(event) = obj.get("event").and_then(|v| v.as_str()) {
+        let event = event.to_string();
+        normalize_event_fields(&mut obj, &event);
+    }
+
+    let json_str = serde_json::Value::Object(obj).to_string();
+
+    // Log to file if enabled
+    if let Some(ref logger) = state.event_logger {
+        logger.log(&json_str);
+    }
 
     let seq = state.store.append(json_str.clone()).await;
     state.sessions.broadcast(&json_str);
 
-    tracing::debug!(seq, event = %normalized, "Event received via HTTP");
+    tracing::debug!(seq, event = %json_str.chars().take(80).collect::<String>(), "Event received via HTTP");
     StatusCode::OK
 }
 
@@ -224,85 +265,64 @@ pub fn normalize_event_name(event: &str, framework: &str) -> String {
     format!("custom:{}", event.to_lowercase())
 }
 
-// ─── Event Data Normalization ────────────────────────────────────────────────
-
-/// Unified field names for tool events.
-const TOOL_NAME_FIELDS: &[&str] = &["tool_name", "name"];
-const TOOL_INPUT_FIELDS: &[&str] = &["tool_input", "args", "input", "parameters", "arguments"];
-const TOOL_RESULT_FIELDS: &[&str] = &["tool_response", "tool_result", "result", "output"];
-const TOOL_ID_FIELDS: &[&str] = &["tool_use_id", "tool_call_id", "call_id", "id", "run_id"];
-
-/// Normalize event data fields to a unified schema.
-///
-/// Ensures consistent field names across frameworks:
-/// - `tool_name` — name of the tool (unified)
-/// - `tool_input` — input/arguments to the tool (unified)
-/// - `tool_response` — output/result from the tool (unified)
-/// - `tool_call_id` — unique identifier for the tool call (unified)
-/// - `duration_ms` — execution duration (unified)
-/// - `session_id` — session identifier (unified)
-pub fn normalize_event_data(
-    data: serde_json::Value,
-    _framework: &str,
-    event: &str,
-) -> serde_json::Value {
-    // Only normalize tool events
-    if !event.starts_with("tool:") {
-        return data;
-    }
-
-    let mut obj = match data {
-        serde_json::Value::Object(map) => map,
-        _ => return data,
-    };
-
-    // Normalize tool_name: find first existing field and rename to tool_name
-    normalize_field_group(&mut obj, TOOL_NAME_FIELDS, "tool_name");
-
-    // Normalize tool_input: find first existing field and rename to tool_input
-    normalize_field_group(&mut obj, TOOL_INPUT_FIELDS, "tool_input");
-
-    // Normalize tool_response: find first existing field and rename to tool_response
-    normalize_field_group(&mut obj, TOOL_RESULT_FIELDS, "tool_response");
-
-    // Normalize tool_call_id: find first existing field and rename to tool_call_id
-    normalize_field_group(&mut obj, TOOL_ID_FIELDS, "tool_call_id");
-
-    // Remove framework-specific fields that are not part of the unified schema
-    let framework_specific = [
-        "hook_event_name", "cwd", "effort", "permission_mode",
-        "transcript_path", "callback",
-    ];
-    for key in framework_specific {
-        obj.remove(key);
-    }
-
-    serde_json::Value::Object(obj)
-}
-
-/// Find the first existing field in `candidates` and rename it to `target`.
-/// If `target` already exists, just remove the candidates.
-fn normalize_field_group(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
-    candidates: &[&str],
-    target: &str,
-) {
-    // Find the first candidate that exists
-    let source = candidates.iter().find(|&&f| obj.contains_key(f)).copied();
-
-    if let Some(source) = source {
-        if source != target {
-            // Move value from source to target
-            if let Some(value) = obj.remove(source) {
-                obj.insert(target.to_string(), value);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ─── Test-only normalization helpers ─────────────────────────────────────
+
+    const TOOL_NAME_FIELDS: &[&str] = &["tool_name", "name"];
+    const TOOL_INPUT_FIELDS: &[&str] = &["tool_input", "args", "input", "parameters", "arguments"];
+    const TOOL_RESULT_FIELDS: &[&str] = &["tool_response", "tool_result", "result", "output"];
+    const TOOL_ID_FIELDS: &[&str] = &["tool_use_id", "tool_call_id", "call_id", "id", "run_id"];
+
+    fn normalize_event_data(
+        data: serde_json::Value,
+        _framework: &str,
+        event: &str,
+    ) -> serde_json::Value {
+        if !event.starts_with("tool:") {
+            return data;
+        }
+
+        let mut obj = match data {
+            serde_json::Value::Object(map) => map,
+            _ => return data,
+        };
+
+        normalize_field_group(&mut obj, TOOL_NAME_FIELDS, "tool_name");
+        normalize_field_group(&mut obj, TOOL_INPUT_FIELDS, "tool_input");
+        normalize_field_group(&mut obj, TOOL_RESULT_FIELDS, "tool_response");
+        normalize_field_group(&mut obj, TOOL_ID_FIELDS, "tool_call_id");
+
+        let framework_specific = [
+            "hook_event_name", "cwd", "effort", "permission_mode",
+            "transcript_path", "callback",
+        ];
+        for key in framework_specific {
+            obj.remove(key);
+        }
+
+        serde_json::Value::Object(obj)
+    }
+
+    fn normalize_field_group(
+        obj: &mut serde_json::Map<String, serde_json::Value>,
+        candidates: &[&str],
+        target: &str,
+    ) {
+        let source = candidates.iter().find(|&&f| obj.contains_key(f)).copied();
+
+        if let Some(source) = source {
+            if source != target {
+                if let Some(value) = obj.remove(source) {
+                    obj.insert(target.to_string(), value);
+                }
+            }
+        }
+    }
+
+    // ─── Tests ───────────────────────────────────────────────────────────────
 
     #[test]
     fn test_claude_code_normalization() {

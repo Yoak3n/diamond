@@ -39,6 +39,7 @@ dirs = "5"
 # Agent hook
 agent-hook = { path = "../crates/agent-hook", default-features = false }
 ureq = "3"
+ctrlc = "3"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

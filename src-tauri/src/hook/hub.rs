@@ -82,11 +82,23 @@ impl HubManager {
 
         info!("Starting Hub sidecar on port {}", self.port);
 
+        // Event log file for debug: {data_dir}/diamond/logs/events.jsonl
+        let log_path = dirs::data_dir()
+            .unwrap_or_default()
+            .join("diamond")
+            .join("logs")
+            .join("events.jsonl");
+        // Ensure parent directory exists
+        if let Some(parent) = log_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let log_path_str = log_path.to_string_lossy().to_string();
+
         let sidecar = app
             .shell()
             .sidecar("hook-hub")
             .map_err(|e| format!("Failed to resolve sidecar: {}", e))?
-            .args(["--port", &self.port.to_string()]);
+            .args(["--port", &self.port.to_string(), "--log-file", &log_path_str]);
 
         let (_rx, child) = sidecar
             .spawn()
@@ -144,74 +156,8 @@ impl HubManager {
     }
 
     /// Kill any process listening on the Hub port.
-    #[cfg(target_os = "windows")]
     fn kill_by_port(&self) {
-        if let Ok(output) = std::process::Command::new("netstat").args(["-ano"]).output() {
-            let output = String::from_utf8_lossy(&output.stdout);
-            for line in output.lines() {
-                if line.contains(&format!(":{}", self.port)) && line.contains("LISTENING") {
-                    if let Some(pid_str) = line.split_whitespace().last() {
-                        if let Ok(port_pid) = pid_str.parse::<u32>() {
-                            let _ = std::process::Command::new("taskkill")
-                                .args(["/F", "/T", "/PID", &port_pid.to_string()])
-                                .output();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    fn kill_by_port(&self) {
-        // Use lsof or ss to find process on port
-        if let Ok(output) = std::process::Command::new("lsof")
-            .args(["-i", &format!(":{}", self.port), "-t"])
-            .output()
-        {
-            let pids = String::from_utf8_lossy(&output.stdout);
-            for pid in pids.lines() {
-                if let Ok(port_pid) = pid.trim().parse::<u32>() {
-                    let _ = std::process::Command::new("kill")
-                        .args(["-9", &port_pid.to_string()])
-                        .output();
-                }
-            }
-        } else if let Ok(output) = std::process::Command::new("ss")
-            .args(["-tlnp", &format!("sport = :{}", self.port)])
-            .output()
-        {
-            let output = String::from_utf8_lossy(&output.stdout);
-            for line in output.lines() {
-                if let Some(pid_match) = line.split("pid=").nth(1) {
-                    if let Some(pid_str) = pid_match.split(',').next() {
-                        if let Ok(port_pid) = pid_str.trim().parse::<u32>() {
-                            let _ = std::process::Command::new("kill")
-                                .args(["-9", &port_pid.to_string()])
-                                .output();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    fn kill_by_port(&self) {
-        // macOS uses lsof to find process on port
-        if let Ok(output) = std::process::Command::new("lsof")
-            .args(["-i", &format!(":{}", self.port), "-t"])
-            .output()
-        {
-            let pids = String::from_utf8_lossy(&output.stdout);
-            for pid in pids.lines() {
-                if let Ok(port_pid) = pid.trim().parse::<u32>() {
-                    let _ = std::process::Command::new("kill")
-                        .args(["-9", &port_pid.to_string()])
-                        .output();
-                }
-            }
-        }
+        kill_by_port(self.port);
     }
 
     /// Check if the Hub is running (fast TCP port check).
@@ -297,6 +243,75 @@ fn port_open(port: u16) -> bool {
         std::time::Duration::from_millis(200),
     )
     .is_ok()
+}
+
+/// Kill any process listening on the given port (public, synchronous, best-effort).
+#[cfg(target_os = "windows")]
+pub fn kill_by_port(port: u16) {
+    if let Ok(output) = std::process::Command::new("netstat").args(["-ano"]).output() {
+        let output = String::from_utf8_lossy(&output.stdout);
+        for line in output.lines() {
+            if line.contains(&format!(":{}", port)) && line.contains("LISTENING") {
+                if let Some(pid_str) = line.split_whitespace().last() {
+                    if let Ok(port_pid) = pid_str.parse::<u32>() {
+                        let _ = std::process::Command::new("taskkill")
+                            .args(["/F", "/T", "/PID", &port_pid.to_string()])
+                            .output();
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn kill_by_port(port: u16) {
+    if let Ok(output) = std::process::Command::new("lsof")
+        .args(["-i", &format!(":{}", port), "-t"])
+        .output()
+    {
+        let pids = String::from_utf8_lossy(&output.stdout);
+        for pid in pids.lines() {
+            if let Ok(port_pid) = pid.trim().parse::<u32>() {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &port_pid.to_string()])
+                    .output();
+            }
+        }
+    } else if let Ok(output) = std::process::Command::new("ss")
+        .args(["-tlnp", &format!("sport = :{}", port)])
+        .output()
+    {
+        let output = String::from_utf8_lossy(&output.stdout);
+        for line in output.lines() {
+            if let Some(pid_match) = line.split("pid=").nth(1) {
+                if let Some(pid_str) = pid_match.split(',').next() {
+                    if let Ok(port_pid) = pid_str.trim().parse::<u32>() {
+                        let _ = std::process::Command::new("kill")
+                            .args(["-9", &port_pid.to_string()])
+                            .output();
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn kill_by_port(port: u16) {
+    if let Ok(output) = std::process::Command::new("lsof")
+        .args(["-i", &format!(":{}", port), "-t"])
+        .output()
+    {
+        let pids = String::from_utf8_lossy(&output.stdout);
+        for pid in pids.lines() {
+            if let Ok(port_pid) = pid.trim().parse::<u32>() {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &port_pid.to_string()])
+                    .output();
+            }
+        }
+    }
 }
 
 /// Kill a process tree by PID.

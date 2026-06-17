@@ -474,6 +474,186 @@ pub mod events {
         data.insert("message".into(), serde_json::Value::String(message.into()));
         AgentEvent::new(EventType::SystemStatus, framework, session_id, EventData::Map(data))
     }
+
+    pub fn message_start(framework: &str, session_id: &str) -> AgentEvent {
+        AgentEvent::new(EventType::MessageStart, framework, session_id, EventData::empty())
+    }
+
+    pub fn message_stream_end(framework: &str, session_id: &str) -> AgentEvent {
+        AgentEvent::new(EventType::MessageStreamEnd, framework, session_id, EventData::empty())
+    }
+
+    pub fn message_interim(framework: &str, session_id: &str, text: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("text".into(), serde_json::Value::String(text.into()));
+        AgentEvent::new(EventType::MessageInterim, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn tool_progress(framework: &str, session_id: &str, name: &str, message: Option<&str>) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("tool_name".into(), serde_json::Value::String(name.into()));
+        if let Some(msg) = message {
+            data.insert("message".into(), serde_json::Value::String(msg.into()));
+        }
+        AgentEvent::new(EventType::ToolProgress, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn tool_generating(framework: &str, session_id: &str, name: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("tool_name".into(), serde_json::Value::String(name.into()));
+        AgentEvent::new(EventType::ToolGenerating, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn tool_guardrail_halt(framework: &str, session_id: &str, name: &str, reason: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("tool_name".into(), serde_json::Value::String(name.into()));
+        data.insert("reason".into(), serde_json::Value::String(reason.into()));
+        AgentEvent::new(EventType::ToolGuardrailHalt, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn approval_request(framework: &str, session_id: &str, tool_name: &str, message: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("tool_name".into(), serde_json::Value::String(tool_name.into()));
+        data.insert("message".into(), serde_json::Value::String(message.into()));
+        AgentEvent::new(EventType::ApprovalRequest, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn approval_result(framework: &str, session_id: &str, approved: bool, reason: Option<&str>) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("approved".into(), serde_json::Value::Bool(approved));
+        if let Some(r) = reason {
+            data.insert("reason".into(), serde_json::Value::String(r.into()));
+        }
+        AgentEvent::new(EventType::ApprovalResult, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn system_warning(framework: &str, session_id: &str, message: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("message".into(), serde_json::Value::String(message.into()));
+        AgentEvent::new(EventType::SystemWarning, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn system_error(framework: &str, session_id: &str, message: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("message".into(), serde_json::Value::String(message.into()));
+        AgentEvent::new(EventType::SystemError, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn system_compression(framework: &str, session_id: &str) -> AgentEvent {
+        AgentEvent::new(EventType::SystemCompression, framework, session_id, EventData::empty())
+    }
+
+    pub fn subagent_start(framework: &str, session_id: &str, name: Option<&str>) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        if let Some(n) = name {
+            data.insert("name".into(), serde_json::Value::String(n.into()));
+        }
+        AgentEvent::new(EventType::SubagentStart, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn subagent_progress(framework: &str, session_id: &str, message: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("message".into(), serde_json::Value::String(message.into()));
+        AgentEvent::new(EventType::SubagentProgress, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn subagent_complete(framework: &str, session_id: &str, result: Option<&str>) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        if let Some(r) = result {
+            data.insert("result".into(), serde_json::Value::String(r.into()));
+        }
+        AgentEvent::new(EventType::SubagentComplete, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn subagent_tool(framework: &str, session_id: &str, tool_name: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("tool_name".into(), serde_json::Value::String(tool_name.into()));
+        AgentEvent::new(EventType::SubagentTool, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn subagent_thinking(framework: &str, session_id: &str, text: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("text".into(), serde_json::Value::String(text.into()));
+        AgentEvent::new(EventType::SubagentThinking, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn chain_start(framework: &str, session_id: &str, name: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("name".into(), serde_json::Value::String(name.into()));
+        AgentEvent::new(EventType::ChainStart, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn chain_end(framework: &str, session_id: &str, name: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("name".into(), serde_json::Value::String(name.into()));
+        AgentEvent::new(EventType::ChainEnd, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn memory_saved(framework: &str, session_id: &str, key: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("key".into(), serde_json::Value::String(key.into()));
+        AgentEvent::new(EventType::MemorySaved, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn memory_loaded(framework: &str, session_id: &str, key: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("key".into(), serde_json::Value::String(key.into()));
+        AgentEvent::new(EventType::MemoryLoaded, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn skill_loaded(framework: &str, session_id: &str, name: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("name".into(), serde_json::Value::String(name.into()));
+        AgentEvent::new(EventType::SkillLoaded, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn skill_saved(framework: &str, session_id: &str, name: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("name".into(), serde_json::Value::String(name.into()));
+        AgentEvent::new(EventType::SkillSaved, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn cron_job_start(framework: &str, session_id: &str, job_id: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("job_id".into(), serde_json::Value::String(job_id.into()));
+        AgentEvent::new(EventType::CronJobStart, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn cron_job_end(framework: &str, session_id: &str, job_id: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("job_id".into(), serde_json::Value::String(job_id.into()));
+        AgentEvent::new(EventType::CronJobEnd, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn background_started(framework: &str, session_id: &str, task_id: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("task_id".into(), serde_json::Value::String(task_id.into()));
+        AgentEvent::new(EventType::BackgroundStarted, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn background_finished(framework: &str, session_id: &str, task_id: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("task_id".into(), serde_json::Value::String(task_id.into()));
+        AgentEvent::new(EventType::BackgroundFinished, framework, session_id, EventData::Map(data))
+    }
+
+    pub fn gateway_start(framework: &str, session_id: &str) -> AgentEvent {
+        AgentEvent::new(EventType::GatewayStart, framework, session_id, EventData::empty())
+    }
+
+    pub fn gateway_shutdown(framework: &str, session_id: &str) -> AgentEvent {
+        AgentEvent::new(EventType::GatewayShutdown, framework, session_id, EventData::empty())
+    }
+
+    pub fn session_reset(framework: &str, session_id: &str) -> AgentEvent {
+        AgentEvent::new(EventType::SessionReset, framework, session_id, EventData::empty())
+    }
+
+    pub fn reasoning_available(framework: &str, session_id: &str, text: &str) -> AgentEvent {
+        let mut data = serde_json::Map::new();
+        data.insert("text".into(), serde_json::Value::String(text.into()));
+        AgentEvent::new(EventType::ReasoningAvailable, framework, session_id, EventData::Map(data))
+    }
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────

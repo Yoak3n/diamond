@@ -38,9 +38,9 @@
 //! | `llm_input` | `agent:step` | S→C |
 //! | `llm_output` | `message:delta` | S→C |
 //! | `subagent_spawned` | `subagent:start` | S→C |
-//! | `subagent_ended` | `subagent:end` | S→C |
+//! | `subagent_ended` | `subagent:complete` | S→C |
 //! | `gateway_start` | `gateway:start` | S→C |
-//! | `gateway_stop` | `gateway:stop` | S→C |
+//! | `gateway_stop` | `gateway:shutdown` | S→C |
 
 use std::collections::HashMap;
 
@@ -134,23 +134,32 @@ pub fn hook_event_mapping() -> HashMap<&'static str, EventType> {
     // Tools
     m.insert("before_tool_call", EventType::ToolStart);
     m.insert("after_tool_call", EventType::ToolComplete);
+    m.insert("tool_error", EventType::ToolError);
+    m.insert("after_tool_error", EventType::ToolError);
 
     // Messages
     m.insert("message_received", EventType::MessageUser);
     m.insert("message_sending", EventType::MessageComplete);
     m.insert("message_sent", EventType::MessageComplete);
+    m.insert("message_delta", EventType::MessageDelta);
+    m.insert("llm_streaming", EventType::MessageDelta);
 
     // Subagents
     m.insert("subagent_spawned", EventType::SubagentStart);
     m.insert("subagent_ended", EventType::SubagentComplete);
+    m.insert("subagent_tool", EventType::SubagentTool);
+    m.insert("subagent_thinking", EventType::SubagentThinking);
+
+    // Approval
+    m.insert("approval_request", EventType::ApprovalRequest);
 
     // Prompt building
     m.insert("before_prompt_build", EventType::Custom("prompt:build".into()));
     m.insert("before_model_resolve", EventType::Custom("model:resolve".into()));
 
     // Compaction
-    m.insert("before_compaction", EventType::Custom("compaction:start".into()));
-    m.insert("after_compaction", EventType::Custom("compaction:end".into()));
+    m.insert("before_compaction", EventType::SystemCompression);
+    m.insert("after_compaction", EventType::SystemCompression);
 
     m
 }
@@ -318,7 +327,7 @@ export async function register(api) {{
 
     // Gateway lifecycle
     api.on("gateway_start", async () => emit("gateway:start", {{}}));
-    api.on("gateway_stop", async () => emit("gateway:stop", {{}}));
+    api.on("gateway_stop", async () => emit("gateway:shutdown", {{}}));
 
     // Session lifecycle
     api.on("session_start", async (e) => emit("session:start", serializeEvent(e)));
@@ -337,21 +346,30 @@ export async function register(api) {{
     // Tools
     api.on("before_tool_call", async (e) => emit("tool:start", serializeEvent(e)));
     api.on("after_tool_call", async (e) => emit("tool:complete", serializeEvent(e)));
+    api.on("tool_error", async (e) => emit("tool:error", serializeEvent(e)));
+    api.on("after_tool_error", async (e) => emit("tool:error", serializeEvent(e)));
 
     // Messages
     api.on("message_received", async (e) => emit("message:user", serializeEvent(e)));
     api.on("message_sending", async (e) => emit("message:complete", serializeEvent(e)));
-    api.on("message_sent", async (e) => emit("message:sent", serializeEvent(e)));
+    api.on("message_sent", async (e) => emit("message:complete", serializeEvent(e)));
+    api.on("message_delta", async (e) => emit("message:delta", serializeEvent(e)));
+    api.on("llm_streaming", async (e) => emit("message:delta", serializeEvent(e)));
 
     // Subagents
     api.on("subagent_spawned", async (e) => emit("subagent:start", serializeEvent(e)));
-    api.on("subagent_ended", async (e) => emit("subagent:end", serializeEvent(e)));
+    api.on("subagent_ended", async (e) => emit("subagent:complete", serializeEvent(e)));
+    api.on("subagent_tool", async (e) => emit("subagent:tool", serializeEvent(e)));
+    api.on("subagent_thinking", async (e) => emit("subagent:thinking", serializeEvent(e)));
+
+    // Approval
+    api.on("approval_request", async (e) => emit("approval:request", serializeEvent(e)));
 
     // Compaction
-    api.on("before_compaction", async (e) => emit("compaction:start", serializeEvent(e)));
-    api.on("after_compaction", async (e) => emit("compaction:end", serializeEvent(e)));
+    api.on("before_compaction", async (e) => emit("system:compression", serializeEvent(e)));
+    api.on("after_compaction", async (e) => emit("system:compression", serializeEvent(e)));
 
-    console.log("[hub-bridge] 20 hooks registered");
+    console.log("[hub-bridge] 26 hooks registered");
 }}
 "#
     )

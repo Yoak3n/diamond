@@ -26,16 +26,16 @@ ws://127.0.0.1:9210/view
 
 ### 基础结构
 
-所有事件消息都是 JSON 格式，包含以下基础字段：
+所有事件消息都是 JSON 格式，字段平铺在顶层（不使用嵌套的 `data` 对象）：
 
 ```json
 {
   "event": "string",        // 事件类型（必填）
   "framework": "string",    // 来源框架标识（必填）
-  "session_id": "string",   // 会话 ID（必填）
+  "session_id": "string",   // 会话 ID（会话级事件必填，网关级事件不需要）
   "turn_id": "string",      // 轮次 ID（可选）
-  "timestamp": "ISO-8601",  // 时间戳（必填）
-  // ... 事件特定的数据字段
+  "timestamp": "ISO-8601",  // 时间戳，以 Z 结尾（必填）
+  // ... 事件特定的数据字段直接平铺在顶层
 }
 ```
 
@@ -45,9 +45,11 @@ ws://127.0.0.1:9210/view
 |------|------|------|------|
 | `event` | string | ✅ | 事件类型，使用 `category:action` 格式 |
 | `framework` | string | ✅ | 来源框架标识，如 `hermes`, `langchain`, `claude-code` |
-| `session_id` | string | ✅ | 会话/对话 ID，用于关联同一会话的事件 |
+| `session_id` | string | 条件 | 会话/对话 ID。会话级事件（`session:*`, `agent:*`, `message:*`, `tool:*` 等）必填；网关级事件（`gateway:*`）不需要 |
 | `turn_id` | string | ❌ | 轮次 ID，用于关联同一用户输入的事件 |
-| `timestamp` | string | ✅ | ISO-8601 格式的时间戳 |
+| `timestamp` | string | ✅ | ISO-8601 格式的时间戳，推荐使用 `Z` 结尾（如 `2024-01-01T00:00:00Z`） |
+
+> **注意**：所有事件特定的数据字段（如 `tool_name`、`text`、`error` 等）必须直接平铺在 JSON 顶层，不得嵌套在 `data` 或其他子对象中。
 
 ---
 
@@ -56,19 +58,26 @@ ws://127.0.0.1:9210/view
 ### 1. Gateway 生命周期
 
 #### `gateway:start`
-网关启动事件。
+网关启动事件（网关级事件，不需要 `session_id`）。
 
 ```json
 {
   "event": "gateway:start",
   "framework": "hermes",
-  "session_id": "sess_123",
   "timestamp": "2024-01-01T00:00:00Z"
 }
 ```
 
 #### `gateway:shutdown`
-网关关闭事件。
+网关关闭事件（网关级事件，不需要 `session_id`）。
+
+```json
+{
+  "event": "gateway:shutdown",
+  "framework": "hermes",
+  "timestamp": "2024-01-01T00:00:00Z"
+}
+```
 
 ---
 

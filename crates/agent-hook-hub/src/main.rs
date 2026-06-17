@@ -16,6 +16,7 @@
 //! ```
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use axum::routing::{get, post};
 use axum::Router;
@@ -25,6 +26,7 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 
 mod api;
+mod logger;
 mod server;
 mod session;
 mod store;
@@ -57,6 +59,10 @@ struct Args {
     /// Log level (trace, debug, info, warn, error).
     #[arg(long, default_value = "info")]
     log_level: String,
+
+    /// File path to log all received events (JSONL format, one event per line).
+    #[arg(long)]
+    log_file: Option<String>,
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
@@ -82,9 +88,23 @@ async fn main() {
     );
 
     // Create shared state
+    let event_logger = args.log_file.as_deref().map(|path| {
+        match logger::EventLogger::new(path) {
+            Ok(l) => {
+                info!(path, "Event logger enabled");
+                Arc::new(l)
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to open event log file");
+                std::process::exit(1);
+            }
+        }
+    });
+
     let state = AppState {
         sessions: SessionManager::new(args.broadcast_capacity),
         store: EventStore::new(args.buffer),
+        event_logger,
     };
 
     // Build router

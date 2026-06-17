@@ -13,7 +13,8 @@ use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use tracing::{debug, info, warn};
 
-use crate::api::{normalize_event_name, normalize_event_data};
+use crate::api::normalize_event_name;
+use crate::logger::EventLogger;
 use crate::session::{ClientRole, SessionManager};
 use crate::store::EventStore;
 
@@ -24,6 +25,7 @@ use crate::store::EventStore;
 pub struct AppState {
     pub sessions: Arc<SessionManager>,
     pub store: Arc<EventStore>,
+    pub event_logger: Option<Arc<EventLogger>>,
 }
 
 // ─── WebSocket Handlers ─────────────────────────────────────────────────────
@@ -106,6 +108,11 @@ async fn handle_agent(mut socket: WebSocket, addr: std::net::SocketAddr, state: 
 
                 // Normalize the event name for frameworks using non-standard names
                 let normalized = normalize_ws_event(&text_str, &framework);
+
+                // Log to file if enabled
+                if let Some(ref logger) = state.event_logger {
+                    logger.log(&normalized);
+                }
 
                 let seq = state.store.append(normalized.clone()).await;
                 state.sessions.broadcast(&normalized);
@@ -241,28 +248,155 @@ enum ViewerCommand {
     Replay { after_seq: u64 },
 }
 
-/// Normalize the `event` field in a WS event JSON string.
+/// Normalize an incoming event JSON to the strict protocol format.
 ///
-/// Parses the JSON, normalizes the event name via [`normalize_event_name`],
-/// and re-serialize. Returns the original string if parsing fails.
+/// Protocol requires all fields flattened to the top level:
+/// ```json
+/// {
+///   "event": "tool:start",
+///   "framework": "claude-code",
+///   "session_id": "xxx",
+///   "turn_id": "yyy",       // optional
+///   "timestamp": "2024-01-01T00:00:00Z",
+///   "tool_name": "Bash",    // event-specific fields at top level
+///   "tool_input": {...}
+/// }
+/// ```
 fn normalize_ws_event(json_str: &str, framework: &str) -> String {
     let mut json: serde_json::Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
         Err(_) => return json_str.to_string(),
     };
 
-    if let Some(event) = json.get("event").and_then(|v| v.as_str()) {
-        let normalized = normalize_event_name(event, framework);
-        if let Some(obj) = json.as_object_mut() {
-            obj.insert("event".into(), serde_json::Value::String(normalized.clone()));
+    let Some(obj) = json.as_object_mut() else {
+        return json_str.to_string();
+    };
 
-            // Also normalize the data field if present
-            if let Some(data) = obj.remove("data") {
-                let normalized_data = normalize_event_data(data, framework, &normalized);
-                obj.insert("data".into(), normalized_data);
+    // 1. Normalize event name
+    if let Some(event) = obj.get("event").and_then(|v| v.as_str()) {
+        let normalized = normalize_event_name(event, framework);
+        obj.insert("event".into(), serde_json::Value::String(normalized));
+    }
+
+    // 2. Flatten `data` fields to top level
+    //    Incoming may have: { "event": "...", "framework": "...", "data": { "session_id": "...", ... } }
+    //    Or already flat:   { "event": "...", "framework": "...", "session_id": "...", ... }
+    if let Some(data) = obj.remove("data") {
+        if let Some(data_obj) = data.as_object() {
+            for (key, value) in data_obj {
+                // Don't overwrite existing top-level keys (except session_id/timestamp which we prefer top-level)
+                if !obj.contains_key(key) {
+                    obj.insert(key.clone(), value.clone());
+                }
             }
         }
     }
 
+    // 3. Extract session_id to top level if buried elsewhere (e.g. tool_input, tool_response)
+    if !obj.contains_key("session_id") {
+        // Try to find session_id in nested objects
+        for key in &["tool_input", "tool_response"] {
+            if let Some(nested) = obj.get(*key).and_then(|v| v.as_object()) {
+                if let Some(sid) = nested.get("session_id") {
+                    obj.insert("session_id".into(), sid.clone());
+                    break;
+                }
+            }
+        }
+    }
+
+    // 4. Ensure framework is present
+    if !obj.contains_key("framework") {
+        obj.insert("framework".into(), serde_json::Value::String(framework.to_string()));
+    }
+
+    // 5. Normalize timestamp to ISO-8601 with Z suffix
+    if let Some(ts) = obj.get("timestamp").and_then(|v| v.as_str()) {
+        let normalized_ts = normalize_timestamp(ts);
+        obj.insert("timestamp".into(), serde_json::Value::String(normalized_ts));
+    } else {
+        obj.insert("timestamp".into(), serde_json::Value::String(
+            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        ));
+    }
+
+    // 6. Normalize event-specific data fields (tool field names, etc.)
+    //    Must happen after flattening so we operate on the full top-level object.
+    if let Some(event) = obj.get("event").and_then(|v| v.as_str()) {
+        let event = event.to_string();
+        normalize_event_fields(obj, &event);
+    }
+
     json.to_string()
+}
+
+/// Normalize timestamp to ISO-8601 with `Z` suffix (not `+00:00`).
+fn normalize_timestamp(ts: &str) -> String {
+    // Try parsing chrono's RFC3339 output (with nanos and +00:00)
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+        return dt.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    }
+    // Try parsing with nanosecond precision
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S%.f%:z") {
+        return dt.and_utc().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    }
+    // Fallback: strip trailing nanoseconds and normalize +00:00 to Z
+    let s = ts.trim();
+    if s.ends_with("+00:00") {
+        format!("{}Z", &s[..s.len() - 6])
+    } else {
+        s.to_string()
+    }
+}
+
+/// Normalize event-specific fields at the top level.
+///
+/// Renames framework-specific field names to the unified schema:
+/// - `name` → `tool_name`, `args` → `tool_input`, `result` → `tool_response`, etc.
+/// - Removes framework-specific metadata fields.
+pub fn normalize_event_fields(obj: &mut serde_json::Map<String, serde_json::Value>, event: &str) {
+    if !event.starts_with("tool:") {
+        return;
+    }
+
+    // tool_name aliases
+    for alias in &["name"] {
+        if let Some(val) = obj.remove(*alias) {
+            if !obj.contains_key("tool_name") {
+                obj.insert("tool_name".into(), val);
+            }
+        }
+    }
+
+    // tool_input aliases
+    for alias in &["args", "input", "parameters", "arguments"] {
+        if let Some(val) = obj.remove(*alias) {
+            if !obj.contains_key("tool_input") {
+                obj.insert("tool_input".into(), val);
+            }
+        }
+    }
+
+    // tool_response aliases
+    for alias in &["tool_result", "result", "output"] {
+        if let Some(val) = obj.remove(*alias) {
+            if !obj.contains_key("tool_response") {
+                obj.insert("tool_response".into(), val);
+            }
+        }
+    }
+
+    // tool_call_id aliases
+    for alias in &["tool_use_id", "call_id"] {
+        if let Some(val) = obj.remove(*alias) {
+            if !obj.contains_key("tool_call_id") {
+                obj.insert("tool_call_id".into(), val);
+            }
+        }
+    }
+
+    // Remove framework-specific metadata that shouldn't be in the output
+    for key in &["hook_event_name", "cwd", "effort", "permission_mode", "transcript_path", "callback"] {
+        obj.remove(*key);
+    }
 }

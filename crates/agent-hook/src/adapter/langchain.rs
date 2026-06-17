@@ -65,6 +65,19 @@ impl LangChainAdapter {
         ));
     }
 
+    /// Called when LLM encounters an error.
+    pub fn on_llm_error(&self, error: &str, run_id: &str) {
+        self.emit(AgentEvent::new(
+            EventType::AgentError,
+            "langchain",
+            &self.session_id,
+            EventData::from([
+                ("error", serde_json::Value::String(error.into())),
+                ("tool_call_id", serde_json::Value::String(run_id.into())),
+            ]),
+        ));
+    }
+
     /// Called when a tool starts.
     pub fn on_tool_start(&self, name: &str, input: &str, run_id: &str) {
         self.emit(AgentEvent::new(
@@ -128,6 +141,43 @@ impl LangChainAdapter {
             &self.session_id,
             EventData::from([
                 ("name", serde_json::Value::String(name.into())),
+                ("tool_call_id", serde_json::Value::String(run_id.into())),
+            ]),
+        ));
+    }
+
+    /// Called when an agent selects an action (tool to call).
+    pub fn on_agent_action(&self, tool_name: &str, tool_input: &str, run_id: &str) {
+        self.emit(AgentEvent::new(
+            EventType::ToolStart,
+            "langchain",
+            &self.session_id,
+            EventData::from([
+                ("tool_name", serde_json::Value::String(tool_name.into())),
+                ("tool_input", serde_json::Value::String(tool_input.into())),
+                ("tool_call_id", serde_json::Value::String(run_id.into())),
+            ]),
+        ));
+    }
+
+    /// Called when an agent finishes.
+    pub fn on_agent_finish(&self, run_id: &str) {
+        self.emit(AgentEvent::new(
+            EventType::AgentEnd,
+            "langchain",
+            &self.session_id,
+            EventData::from([("tool_call_id", serde_json::Value::String(run_id.into()))]),
+        ));
+    }
+
+    /// Called when a chat model starts generating.
+    pub fn on_chat_model_start(&self, model_name: &str, run_id: &str) {
+        self.emit(AgentEvent::new(
+            EventType::AgentStep,
+            "langchain",
+            &self.session_id,
+            EventData::from([
+                ("model", serde_json::Value::String(model_name.into())),
                 ("tool_call_id", serde_json::Value::String(run_id.into())),
             ]),
         ));

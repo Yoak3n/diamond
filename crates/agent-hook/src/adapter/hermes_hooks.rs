@@ -358,7 +358,7 @@ def on_transform_llm_output(*args, **kwargs):
         model = kwargs.get("model")
         platform = kwargs.get("platform")
 
-        emit("assistant:response", {{
+        emit("message:complete", {{
             "session_id": _safe_str(session_id, 100),
             "model": _safe_str(model, 100),
             "platform": _safe_str(platform, 50),
@@ -540,7 +540,7 @@ mod tests {
         assert!(init.contains("HUB_HTTP_URL = \"http://127.0.0.1:9210\""));
         assert!(init.contains("def register(ctx):"));
         assert!(init.contains("transform_llm_output"));
-        assert!(init.contains("assistant:response"));
+        assert!(init.contains("message:complete"));
     }
 
     #[test]

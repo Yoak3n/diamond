@@ -84,7 +84,7 @@ class HookHandler:
         self._emit("chain:end", tool_call_id=str(run_id))
 
     def on_chain_error(self, error, *, run_id, **kwargs):
-        self._emit("chain:error", error=str(error), tool_call_id=str(run_id))
+        self._emit("agent:error", error=str(error), tool_call_id=str(run_id))
 
     # ── Agent events ──
 
